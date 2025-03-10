@@ -26,7 +26,7 @@ import {
 import LoadingPage from './loadingPage';
 import { GridSystemProps, RenderGripProps } from './types';
 
-const allowTypeGenerate = ['flex', 'grid', 'content'];
+const allowTypeGenerate = ['flex', 'grid'];
 // Hàm lấy dữ liệu từ API hoặc store
 const getDataFromApi = async (
   apiData: TApiData[],
@@ -34,6 +34,7 @@ const getDataFromApi = async (
 ) => {
   const existingApiData = apiData.find((item: any) => item.id === apiCall?.id);
   if (!_.isEmpty(existingApiData)) return existingApiData.data;
+  console.log('🚀 ~ existingApiData:', existingApiData);
 
   const response = await axios.request({
     url: apiCall?.url,
@@ -97,7 +98,7 @@ const createCardsFromApi = (sliceRef: GridItem, apiData: any) => {
 };
 
 const updateTitleInText = (sliceRef: GridItem, result: any): string | undefined => {
-  if (!allowTypeGenerate.includes(sliceRef.type ?? '') || !sliceRef?.valueRender?.jsonPath) return;
+  if (!sliceRef?.valueRender?.jsonPath) return;
 
   const jsonPath = sliceRef.valueRender?.jsonPath;
   // console.log(`🚀 ~ updateTitleInText ~ jsonPath: ${sliceRef.id}`, jsonPath);
@@ -119,13 +120,17 @@ const RenderSlice: React.FC<TRenderSlice> = ({ slice }) => {
     const fetchData = async () => {
       // Hàm cập nhật tiêu đề cho text hoặc description
 
-      if (!sliceRef?.valueRender) return;
-
-      const { apiCall } = sliceRef.valueRender;
-
       try {
+        if (!sliceRef?.valueRender?.apiCall) return;
+
+        const { apiCall } = sliceRef.valueRender;
+
         // Lấy dữ liệu từ API hoặc store
         const result = await getDataFromApi(apiData, apiCall);
+
+        if (!_.isEmpty(result)) {
+          addApiData({ id: apiCall?.id ?? Date.now(), data: result });
+        }
 
         // Tạo các card từ dữ liệu API
         const newCards = createCardsFromApi(sliceRef, result);
@@ -147,7 +152,7 @@ const RenderSlice: React.FC<TRenderSlice> = ({ slice }) => {
     };
 
     fetchData();
-  }, [addApiData, slice, apiData]);
+  }, [addApiData, slice]);
 
   if (!sliceRef) return null;
   const styleDevice: string = getDeviceSize() as string;
