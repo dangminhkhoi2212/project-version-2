@@ -1,14 +1,148 @@
-"use client";
+'use client';
 
-import React from "react";
+import axios from 'axios';
+import _ from 'lodash';
+import queryString from 'query-string';
+import React, { useState } from 'react';
+import { CSSProperties } from 'styled-components';
 
-export default function Pagination() {
+import { useApiCallStore } from '@/providers';
+import { layoutStore, TApiData } from '@/stores';
+
+import { GridItem } from '../grid-systems/const';
+
+type TProps = {
+  data?: any;
+  style?: CSSProperties;
+};
+const Pagination: React.FC<TProps> = ({ style, data }) => {
+  console.log('🚀 ~ data:', data);
+  const { data: layout } = layoutStore();
+  const { updateApiData, apiData } = useApiCallStore((state) => state);
+  const [currentPage, setCurrentPage] = useState(1);
+  const totalPages = 10; // You can make this dynamic based on your data
+
+  // Handler functions
+  const handlePrevious = () => {
+    if (currentPage > 1) {
+      setCurrentPage(currentPage - 1);
+    }
+  };
+
+  const handleNext = () => {
+    if (currentPage < totalPages) {
+      setCurrentPage(currentPage + 1);
+    }
+  };
+  const findComponentHaveAPI = (
+    component: GridItem,
+    apiCallPagination: TApiData
+  ): GridItem | null => {
+    // Kiểm tra component hiện tại
+    if (component?.valueRender?.apiCall?.id === apiCallPagination.id) {
+      return component;
+    }
+
+    // Kiểm tra các childs
+    if (component?.childs?.length) {
+      for (const child of component.childs) {
+        const foundComponent = findComponentHaveAPI(child, apiCallPagination);
+        if (foundComponent) {
+          return foundComponent; // Trả về component nếu tìm thấy
+        }
+      }
+    }
+
+    // Trả về null nếu không tìm thấy
+    return null;
+  };
+
+  const handlePageClick = async (page: number) => {
+    console.log('🚀 ~ handlePageClick ~ page:', page);
+    const desktop = layout?.desktop;
+    const dynamicGenarateDiv = findComponentHaveAPI(desktop, data.valueRender.apiCall);
+
+    if (!dynamicGenarateDiv) return;
+    console.log('🚀 ~ handlePageClick ~ before:', dynamicGenarateDiv);
+
+    // handle old url
+    const query = queryString.parseUrl(dynamicGenarateDiv.valueRender?.apiCall?.url ?? '');
+    console.log('🚀 ~ handlePageClick ~ query:', query);
+
+    //update new url
+    _.update(dynamicGenarateDiv, 'valueRender.apiCall.url', (url) =>
+      queryString.stringifyUrl({
+        url,
+        query: { ...query.query, skip: page * ((Number(query.query?.limit) || 1) - 1) },
+      })
+    );
+    console.log('🚀 ~ handlePageClick ~ after:', dynamicGenarateDiv);
+
+    // updateUrlForChilds(dynamicGenarateDiv!, dynamicGenarateDiv?.valueRender?.apiCall?.url ?? '');
+    const existedApiData = apiData.find(
+      (item) => item.id === dynamicGenarateDiv?.valueRender?.apiCall?.id
+    );
+
+    try {
+      const { url, method } = dynamicGenarateDiv?.valueRender?.apiCall ?? {};
+      const updateValueApi = (await axios.request({ url, method: method?.toLocaleLowerCase() }))
+        .data;
+      if (!_.isEmpty(existedApiData)) updateApiData(existedApiData.id, updateValueApi);
+
+      console.log('🚀 ~ handlePageClick ~ updateValueApi:', updateValueApi);
+    } catch (error) {
+      console.log('🚀 ~ handlePageClick ~ error:', error);
+    }
+
+    // const dom = document.getElementById(dynamicGenarateDiv?.id ?? '');
+    // console.log('🚀 ~ handlePageClick ~ dom:', dom);
+    // const gridRender = <RenderGrid items={dynamicGenarateDiv?.childs ?? []} />;
+    // // const gridRender = <div>text</div>;
+    // console.log('🚀 ~ handlePageClick ~ gridRender:', gridRender);
+
+    // if (dom && gridRender) {
+    //   // Render React component vào wrapper
+    //   const root = createRoot(dom);
+    //   // console.log('🚀 ~ handlePageClick ~ root:', root);
+
+    //   root.render(gridRender);
+
+    //   // Thêm wrapper vào DOM
+    // }
+    setCurrentPage(page);
+  };
+
+  // Generate page numbers with ellipsis
+  const getPageNumbers = () => {
+    // const pages = [];
+    const maxVisiblePages = 4;
+
+    if (totalPages <= maxVisiblePages) {
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+
+    if (currentPage <= 3) {
+      return [1, 2, 3, 4, '...', totalPages];
+    }
+
+    if (currentPage >= totalPages - 2) {
+      return [1, '...', totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
+    }
+
+    return [1, '...', currentPage - 1, currentPage, currentPage + 1, '...', totalPages];
+  };
+
   return (
-    <div className="bg-white py-10 text-center dark:bg-dark">
+    <div className="bg-white py-10 text-center dark:bg-dark" style={style}>
       <div className="mb-12 inline-flex justify-center rounded bg-white p-3 shadow-[0px_1px_3px_0px_rgba(0,0,0,0.13)] dark:bg-dark-2">
         <ul className="inline-flex overflow-hidden rounded-lg border border-stroke dark:border-white/5">
+          {/* Previous Button */}
           <li>
-            <button className="flex h-10 min-w-10 items-center justify-center border-r border-stroke px-2 text-base font-medium text-dark hover:bg-gray-2 dark:border-white/10 dark:text-white dark:hover:bg-white/5">
+            <button
+              onClick={handlePrevious}
+              disabled={currentPage === 1}
+              className="flex h-10 min-w-10 items-center justify-center border-r border-stroke px-2 text-base font-medium text-dark hover:bg-gray-2 disabled:opacity-50 dark:border-white/10 dark:text-white dark:hover:bg-white/5"
+            >
               <svg
                 width="20"
                 height="21"
@@ -23,38 +157,32 @@ export default function Pagination() {
               </svg>
             </button>
           </li>
+
+          {/* Page Numbers */}
+          {getPageNumbers().map((page, index) => (
+            <li key={index}>
+              <button
+                type="button"
+                onClick={() => typeof page === 'number' && handlePageClick(page)}
+                disabled={typeof page !== 'number'}
+                className={`cursor-pointer flex h-10 min-w-10 items-center justify-center border-r border-stroke px-2 text-base font-medium ${
+                  currentPage === page
+                    ? 'bg-gray-2 dark:bg-white/10'
+                    : 'text-dark hover:bg-gray-2 dark:text-white dark:hover:bg-white/5'
+                } dark:border-white/10`}
+              >
+                {page}
+              </button>
+            </li>
+          ))}
+
+          {/* Next Button */}
           <li>
-            <button className="flex h-10 min-w-10 items-center justify-center border-r border-stroke px-2 text-base font-medium text-dark hover:bg-gray-2 dark:border-white/10 dark:text-white dark:hover:bg-white/5">
-              1
-            </button>
-          </li>
-          <li>
-            <button className="flex h-10 min-w-10 items-center justify-center border-r border-stroke px-2 text-base font-medium text-dark hover:bg-gray-2 dark:border-white/10 dark:text-white dark:hover:bg-white/5">
-              2
-            </button>
-          </li>
-          <li>
-            <button className="flex h-10 min-w-10 items-center justify-center border-r border-stroke px-2 text-base font-medium text-dark hover:bg-gray-2 dark:border-white/10 dark:text-white dark:hover:bg-white/5">
-              3
-            </button>
-          </li>
-          <li>
-            <button className="flex h-10 min-w-10 items-center justify-center border-r border-stroke px-2 text-base font-medium text-dark hover:bg-gray-2 dark:border-white/10 dark:text-white dark:hover:bg-white/5">
-              4
-            </button>
-          </li>
-          <li>
-            <button className="flex h-10 min-w-10 items-center justify-center border-r border-stroke px-2 text-base font-medium text-dark hover:bg-gray-2 dark:border-white/10 dark:text-white dark:hover:bg-white/5">
-              ...
-            </button>
-          </li>
-          <li>
-            <button className="flex h-10 min-w-10 items-center justify-center border-r border-stroke px-2 text-base font-medium text-dark hover:bg-gray-2 dark:border-white/10 dark:text-white dark:hover:bg-white/5">
-              10
-            </button>
-          </li>
-          <li>
-            <button className="flex h-10 min-w-10 items-center justify-center px-2 text-base font-medium text-dark hover:bg-gray-2 dark:border-white/10 dark:text-white dark:hover:bg-white/5">
+            <button
+              onClick={handleNext}
+              disabled={currentPage === totalPages}
+              className="flex h-10 min-w-10 items-center justify-center px-2 text-base font-medium text-dark hover:bg-gray-2 disabled:opacity-50 dark:border-white/10 dark:text-white dark:hover:bg-white/5"
+            >
               <svg
                 width="20"
                 height="21"
@@ -73,4 +201,5 @@ export default function Pagination() {
       </div>
     </div>
   );
-}
+};
+export default Pagination;

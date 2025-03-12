@@ -10,13 +10,14 @@
     "format": "prettier --write ."
   },
   "dependencies": {
-    "jsonpath-plus": "^10.3.0",
     "@codesandbox/sandpack-react": "^2.20.0",
     "axios": "^1.7.9",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "jsonpath-plus": "^10.3.0",
     "lodash": "^4.17.21",
     "next": "15.2.0",
+    "query-string": "^9.1.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-frame-component": "^5.2.7",

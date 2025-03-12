@@ -1,6 +1,4 @@
 'use client';
-import axios from 'axios';
-import { JSONPath } from 'jsonpath-plus';
 import _ from 'lodash';
 import dynamic from 'next/dynamic';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -10,7 +8,8 @@ import { rebuilComponentMonaco } from '@/app/actions/use-constructor';
 import { CONFIGS } from '@/configs';
 import { componentRegistry } from '@/lib/slices';
 import { getDeviceSize } from '@/lib/utils';
-import { apiCallStore, TApiData } from '@/stores';
+import { useApiCallStore } from '@/providers';
+import { dynamicGenarateUtil } from '@/uitls/dynamicGenarate';
 
 import NotFound from './404';
 import {
@@ -21,146 +20,52 @@ import {
   mapJustifyContent,
   SpanCol,
   SpanRow,
-  ValueRender,
 } from './const';
 import LoadingPage from './loadingPage';
 import { GridSystemProps, RenderGripProps } from './types';
 
-const allowTypeGenerate = ['flex', 'grid'];
-// Hàm lấy dữ liệu từ API hoặc store
-const getDataFromApi = async (
-  apiData: TApiData[],
-  apiCall: Pick<ValueRender, 'apiCall'>['apiCall']
-) => {
-  const existingApiData = apiData.find((item: any) => item.id === apiCall?.id);
-  if (!_.isEmpty(existingApiData)) return existingApiData.data;
-  console.log('🚀 ~ existingApiData:', existingApiData);
+const componentHasAction = ['pagination'];
+const allowUpdateTitle = ['content'];
+type TRenderSlice = { slice: GridItem | null | undefined; idParent: string };
 
-  const response = await axios.request({
-    url: apiCall?.url,
-    method: apiCall?.method.toLowerCase(),
-  });
-  return response.data;
-};
-
-// Hàm cập nhật jsonPath theo index của card
-const updateJsonPath = (jsonPath: string, index: number) => {
-  return _.replace(jsonPath, /\[\d*\]/, `[${index}]`);
-};
-
-const updateJsonPathForChild = (slice: GridItem, index: number) => {
-  const updateSlide = {
-    ...slice,
-    valueRender: {
-      ...slice.valueRender,
-      jsonPath: updateJsonPath(slice.valueRender?.jsonPath ?? '', index),
-    },
-  };
-  const childs = updateSlide.childs;
-
-  if (!childs?.length) return updateSlide;
-
-  const updateChilds = childs.map((child) => updateJsonPathForChild(child, index));
-  updateSlide.childs = updateChilds;
-
-  return updateSlide;
-};
-// Hàm tạo các card từ dữ liệu API
-const createCardsFromApi = (sliceRef: GridItem, apiData: any) => {
-  if (!allowTypeGenerate.includes(sliceRef.type) || !sliceRef.valueRender?.allowDynamicGenerate) {
-    return sliceRef.childs;
-  }
-
-  const childs = sliceRef.childs?.filter((value: GridItem) =>
-    allowTypeGenerate.includes(value.type ?? '')
-  );
-
-  if (_.isEmpty(childs)) return [];
-
-  const newCards = _.flatMap(_.range(apiData.length), (index) =>
-    _.map(childs, (value: GridItem) => {
-      const newChild = {
-        ...value,
-        valueRender: {
-          ...(value.valueRender ?? {}),
-          index,
-        },
-      };
-      if (newChild?.childs?.length) {
-        newChild.childs = newChild.childs.map((child) => updateJsonPathForChild(child, index));
-      }
-
-      return newChild;
-    })
-  );
-
-  return newCards;
-};
-
-const updateTitleInText = (sliceRef: GridItem, result: any): string | undefined => {
-  if (!sliceRef?.valueRender?.jsonPath) return;
-
-  const jsonPath = sliceRef.valueRender?.jsonPath;
-  // console.log(`🚀 ~ updateTitleInText ~ jsonPath: ${sliceRef.id}`, jsonPath);
-
-  if (_.isEmpty(jsonPath)) return;
-  const title = JSONPath({ path: jsonPath!, json: result });
-
-  // console.log(`🚀 ~ fetchData ~ title: ${sliceRef.id}`, title);
-  return title;
-};
-type TRenderSlice = { slice: GridItem | null | undefined; indexParent?: number };
 const RenderSlice: React.FC<TRenderSlice> = ({ slice }) => {
-  const { apiData, addApiData } = apiCallStore();
+  const { apiData } = useApiCallStore((state) => state);
+  console.log('🚀 ~ apiData:', apiData);
+  const { updateTitleInText } = dynamicGenarateUtil;
   const [sliceRef, setSliceRef] = useState<GridItem | null | undefined>(slice);
 
   useEffect(() => {
-    if (!sliceRef) return;
+    console.log('RenderSlice apiData', apiData);
 
-    const fetchData = async () => {
-      // Hàm cập nhật tiêu đề cho text hoặc description
+    if (
+      sliceRef &&
+      !_.isEmpty(sliceRef?.valueRender?.jsonPath) &&
+      allowUpdateTitle.includes(sliceRef.type)
+    ) {
+      const { apiCall } = sliceRef.valueRender || {};
+      const valueJson = apiData.find((item) => item.id === apiCall?.id);
+      // Cập nhật tiêu đề cho content
+      const title = updateTitleInText(sliceRef, valueJson?.data);
+      console.log('🚀RenderSlice 2', { apiData, title });
+      // Cập nhật sliceRef với các card mới
+      setSliceRef((prev) => ({
+        ...prev,
+        dataSlice: { title: _.isArray(title) ? title[0] : title },
+        type: prev?.type || 'grid',
+      }));
+    }
+  }, [apiData]);
 
-      try {
-        if (!sliceRef?.valueRender?.apiCall) return;
+  const data = useMemo(() => {
+    const key = sliceRef?.id?.split('$')[0];
+    return componentHasAction.includes(key!) ? sliceRef : _.get(sliceRef, 'dataSlice');
+  }, [sliceRef]);
 
-        const { apiCall } = sliceRef.valueRender;
-
-        // Lấy dữ liệu từ API hoặc store
-        const result = await getDataFromApi(apiData, apiCall);
-
-        if (!_.isEmpty(result)) {
-          addApiData({ id: apiCall?.id ?? Date.now(), data: result });
-        }
-
-        // Tạo các card từ dữ liệu API
-        const newCards = createCardsFromApi(sliceRef, result);
-
-        // console.log(`🚀 ~ fetchData ~ newCards: ${sliceRef.id}`, newCards);
-
-        // Cập nhật tiêu đề cho content
-        const title = updateTitleInText(sliceRef, result);
-        // Cập nhật sliceRef với các card mới
-        setSliceRef((prev) => ({
-          ...prev,
-          dataSlice: { title: _.isArray(title) ? title[0] : title },
-          childs: newCards as GridItem[],
-          type: prev?.type || 'grid',
-        }));
-      } catch (error) {
-        console.error('Error fetching API data:', error);
-      }
-    };
-
-    fetchData();
-  }, [addApiData, slice]);
-
-  if (!sliceRef) return null;
   const styleDevice: string = getDeviceSize() as string;
 
   const key = sliceRef?.id?.split('$')[0];
-  const SliceComponent = componentRegistry[key as keyof typeof componentRegistry];
 
-  if (!SliceComponent && !sliceRef?.childs) return null;
+  const SliceComponent = componentRegistry[key as keyof typeof componentRegistry];
 
   const isGrid = sliceRef?.type === 'grid' ? 'grid' : '';
   const isFlexBox = sliceRef?.type === 'flex';
@@ -187,23 +92,134 @@ const RenderSlice: React.FC<TRenderSlice> = ({ slice }) => {
   };
 
   const content = SliceComponent ? (
-    <SliceComponent style={styleSlice} data={_.get(sliceRef, 'dataSlice')} />
+    <SliceComponent style={styleSlice} data={data} />
   ) : (
-    sliceRef?.childs && <RenderGrid items={sliceRef.childs} />
+    sliceRef?.childs && (
+      <RenderGrid items={sliceRef.childs} idParent={sliceRef.id!} slice={sliceRef} />
+    )
   );
+  // useEffect(() => {
+  //   if (!sliceRef) return;
+  //   if (idParent.toLocaleUpperCase() === 'GRID-19A3932D-DA05-43BF-B541-AD8E66A1C70B')
+  //     console.log('🚀 RenderGrid~ idParent child:', sliceRef.id);
+  //   const fetchData = async () => {
+  //     // Hàm cập nhật tiêu đề cho text hoặc description
+  //     console.log(sliceRef.id?.toLocaleUpperCase());
+
+  //     try {
+  //       if (!sliceRef?.valueRender?.apiCall?.id) return;
+
+  //       const { apiCall, jsonPath } = sliceRef.valueRender;
+  //       console.log('🚀 ~ fetchData ~ apiCall:', { apiCall, apiData, sliceRef });
+
+  //       // Lấy dữ liệu từ API hoặc store
+  //       const existingApiData = apiData.find(
+  //         (item: any) => item.id === apiCall?.id || item.idParent === idParent
+  //       );
+  //       let result = null;
+  //       if (sliceRef.valueRender.allowDynamicGenerate) {
+  //         result = await getDataFromApi(apiData, idParent, apiCall);
+  //         console.log('🚀 ~ fetchData ~ result:', { result, length: result.length });
+  //         const newCards = createCardsFromApi(sliceRef, result, jsonPath ?? '');
+  //         console.log('🚀 ~ fetchData ~ newCards:', newCards);
+  //         setSliceRef((prev) => ({
+  //           ...prev,
+  //           childs: newCards as GridItem[],
+  //           type: prev?.type || 'grid',
+  //         }));
+  //       }
+
+  //       // if (!_.isEmpty(result) && !existingApiData) {
+  //       //   addApiData({ id: apiCall?.id ?? Date.now(), idParent, data: result });
+  //       // } else {
+  //       //   updateApiData({ id: apiCall?.id ?? Date.now(), idParent: sliceRef.id!, data: result });
+  //       // }
+
+  //       // // Tạo các card từ dữ liệu API
+
+  //       // // console.log(`🚀 ~ fetchData ~ newCards: ${sliceRef.id}`, newCards);
+  //       if (
+  //         !_.isEmpty(sliceRef?.valueRender?.jsonPath) &&
+  //         allowUpdateTitle.includes(sliceRef.type)
+  //       ) {
+  //         // Cập nhật tiêu đề cho content
+  //         const title = updateTitleInText(sliceRef, result);
+  //         console.log('🚀 ~ fetchData ~ title:', {
+  //           jsonPath,
+  //           result,
+  //           title: JSONPath({ json: result, path: jsonPath ?? '' }),
+  //         });
+  //         // Cập nhật sliceRef với các card mới
+  //         setSliceRef((prev) => ({
+  //           ...prev,
+  //           dataSlice: { title: _.isArray(title) ? title[0] : title },
+  //           type: prev?.type || 'grid',
+  //         }));
+  //       }
+  //     } catch (error) {
+  //       console.error('Error fetching API data:', error);
+  //     }
+  //   };
+
+  //   fetchData();
+  //   // eslint-disable-next-line react-hooks/exhaustive-deps
+  // }, []);
 
   return sliceClasses || Object.keys(inlineStyles).length ? (
-    <div className={`${sliceClasses}`} style={isButton ? {} : inlineStyles}>
+    <div className={`${sliceClasses}`} style={isButton ? {} : inlineStyles} id={sliceRef?.id}>
       {content}
     </div>
   ) : null;
 };
 
-const RenderGrid = ({ items }: RenderGripProps) => {
+export const RenderGrid: React.FC<RenderGripProps> = ({ idParent, slice }) => {
+  const { apiData, addApiData } = useApiCallStore((state) => state);
+  const [sliceRef, setSliceRef] = useState<GridItem | null | undefined>(slice);
+  const { createCardsFromApi, getDataFromApi } = dynamicGenarateUtil;
+
+  useEffect(() => {
+    console.log('RenderGrid', apiData);
+  }, [apiData]);
+  useEffect(() => {
+    if (!sliceRef) return;
+
+    const fetchData = async () => {
+      // Hàm cập nhật tiêu đề cho text hoặc description
+
+      try {
+        if (!sliceRef?.valueRender?.apiCall?.id) return;
+
+        const { apiCall, jsonPath } = sliceRef.valueRender;
+        let result = null;
+        if (sliceRef.valueRender.allowDynamicGenerate) {
+          const {
+            apiCall: { id },
+          } = sliceRef.valueRender;
+          result = await getDataFromApi(apiData, idParent, apiCall);
+          if (!_.isEmpty(result)) {
+            addApiData({ id, data: result, idParent });
+          }
+          console.log('🚀RenderGrid 1');
+          const newCards = createCardsFromApi(sliceRef, result, jsonPath ?? '');
+          console.log('🚀 ~ fetchData ~ newCards:', newCards);
+          setSliceRef((prev) => ({
+            ...prev,
+            childs: newCards as GridItem[],
+            type: prev?.type || 'grid',
+          }));
+        }
+      } catch (error) {
+        console.error('Error fetching API data:', error);
+      }
+    };
+
+    fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   return (
     <>
-      {_.map(items, (slice, index) => (
-        <RenderSlice slice={slice} key={index} />
+      {_.map(sliceRef?.childs, (slice, index) => (
+        <RenderSlice slice={slice} key={index} idParent={idParent} />
       ))}
     </>
   );
@@ -227,8 +243,8 @@ const GridSystemContainer = ({ page, deviceType }: GridSystemProps) => {
   const content = (
     <div className="mx-auto flex justify-center">
       {config?.childs ? (
-        <div className="w-full flex flex-col justify-center flex-wrap overflow-auto">
-          <RenderGrid items={config.childs} />
+        <div className="w-full flex flex-col justify-center flex-wrap overflow-auto" id={config.id}>
+          <RenderGrid items={config.childs} idParent={config.id!} slice={config} />
         </div>
       ) : (
         <NotFound />

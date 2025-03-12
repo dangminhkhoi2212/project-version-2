@@ -21,6 +21,7 @@ export function useConstructorDataAPI(documentId?: string, pageName?: string) {
     fetcher,
     { revalidateOnFocus: false, refreshInterval: 60000 }
   );
+  console.log('🚀 ~ useConstructorDataAPI ~ data:', data);
 
   if (error) {
     console.error('❌ Error fetching constructor:', error);

@@ -1,6 +1,9 @@
-import type { Metadata } from 'next';
-import { fetchSEOData } from '../layout';
 import _ from 'lodash';
+import type { Metadata } from 'next';
+
+import { ApiStoreProvider } from '@/providers';
+
+import { fetchSEOData } from '../layout';
 
 export async function generateMetadata({ params }: { params: { uid: string } }): Promise<Metadata> {
   const { uid } = await params;
@@ -40,5 +43,5 @@ export async function generateMetadata({ params }: { params: { uid: string } }):
 }
 
 export default function UidLayout({ children }: { children: React.ReactNode }) {
-  return <>{children}</>;
+  return <ApiStoreProvider>{children}</ApiStoreProvider>;
 }

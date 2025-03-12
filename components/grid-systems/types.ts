@@ -14,7 +14,9 @@ export type SliceItemsType =
 
 export type RenderGripProps = {
   items: GridItem[];
+  idParent: string;
   grid?: any;
+  slice: GridItem;
 };
 
 export type RenderSliceProps = {
